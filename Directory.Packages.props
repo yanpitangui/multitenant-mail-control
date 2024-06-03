@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <!-- Akka.NET Package Versions -->
+  <ItemGroup>
+    <PackageVersion Include="Akka.Cluster.Hosting" Version="1.5.20" />
+    <PackageVersion Include="Akka.Hosting" Version="1.5.20" />
+    <PackageVersion Include="Akka.Streams.Amqp.RabbitMq" Version="1.5.18" />
+  </ItemGroup>
+</Project>
