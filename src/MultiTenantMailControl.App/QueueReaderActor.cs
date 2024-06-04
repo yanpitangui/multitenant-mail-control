@@ -19,22 +19,20 @@ public class QueueReaderActor : ReceiveActor
         _source = source;
         _messages = new Dictionary<Guid, CommittableIncomingMessage>();
         
-        ReceiveAsync<Events.Ack>(e =>
+        ReceiveAsync<Events.Ack>(async e =>
         {
             if (_messages.Remove(e.MessageId, out var message))
-            {
-                return message.Ack();
+            { 
+                await message.Ack();
             }
-            return Task.CompletedTask;
         });
         
-        ReceiveAsync<Events.Nack>(e =>
+        ReceiveAsync<Events.Nack>(async e =>
         {
             if (_messages.Remove(e.MessageId, out var message))
             {
-                return message.Nack();
+                await message.Nack();
             }
-            return Task.CompletedTask;
         });
     }
     
@@ -42,6 +40,7 @@ public class QueueReaderActor : ReceiveActor
     {
         var logger = Context.GetLogger();
 
+        var self = Context.Self;
         logger.Info("Starting reading from stream");
         _source
             .SelectAsync(10,async m =>
@@ -67,7 +66,7 @@ public class QueueReaderActor : ReceiveActor
             })
             .Where(x => x.HasValue)
             .Select(x => x.Value)
-            .RunForeach(_shardingTenant.Tell, Context.System.Materializer())
+            .RunForeach(m => _shardingTenant.Tell(m, self), Context.System.Materializer())
             .ContinueWith(x =>
             {
                 if (x.IsCompletedSuccessfully)

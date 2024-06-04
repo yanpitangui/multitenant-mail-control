@@ -1,6 +1,7 @@
 ﻿using Akka.Cluster.Hosting;
 using Akka.Cluster.Sharding;
 using Akka.Hosting;
+using Akka.Remote.Hosting;
 using Akka.Streams;
 using Akka.Streams.Amqp.RabbitMq;
 using Akka.Streams.Amqp.RabbitMq.Dsl;
@@ -23,9 +24,23 @@ hostBuilder.ConfigureServices((context, services) =>
             RememberEntitiesStore = RememberEntitiesStore.DData
         };
         
+        var clusterOptions = new Akka.Cluster.Hosting.ClusterOptions
+        {
+            MinimumNumberOfMembers = 1,
+            SeedNodes = new[] { $"akka.tcp://{actorSystemName}@0.0.0.0:5213" },
+            Roles = new[] { actorSystemName }
+        };
+        
+        var remoteOptions = new RemoteOptions
+        {
+            HostName = "0.0.0.0",
+            Port = 5213, 
+        };
+        
         var extractor = new TenantIdExtractor(50);
         builder
-            .WithClustering()
+            .WithRemoting(remoteOptions)
+            .WithClustering(clusterOptions)
             .WithShardRegion<TenantActor>(nameof(TenantActor), TenantActor.Props, extractor, defaultShardOptions)
             .WithActors((system, registry, resolver) =>
             {

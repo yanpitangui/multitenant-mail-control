@@ -9,6 +9,7 @@ namespace MultiTenantMailControl.App;
 /// </summary>
 public class TenantActor : ReceivePersistentActor
 {
+    private readonly ILoggingAdapter _log = Context.GetLogger();
     public TenantActor(string tenantId)
     {
         PersistenceId = $"tenant-{tenantId}";
@@ -18,6 +19,7 @@ public class TenantActor : ReceivePersistentActor
             PersistAsync(message, m =>
             {
                 sender.Tell(new Events.Ack(m.MessageId));
+                _log.Info("Persisted message {0}", m.MessageId);
             });
         });
     }
@@ -31,5 +33,25 @@ public class TenantActor : ReceivePersistentActor
 
 public static class TenantCommands
 {
-    public record SendEmail(string TenantId, Guid MessageId, string EmailContent, string EmailSubject) : IWithTenantId, IWithMessageId;
+    public record SendEmail : IWithTenantId, IWithMessageId
+    {
+        public SendEmail(string TenantId, Guid MessageId, string EmailContent, string EmailSubject)
+        {
+            this.TenantId = TenantId;
+            this.MessageId = MessageId;
+            this.EmailContent = EmailContent;
+            this.EmailSubject = EmailSubject;
+        }
+
+        public SendEmail()
+        {
+            
+        }
+        public required string TenantId { get; init; }
+        public Guid MessageId { get; init; }
+        public required string EmailContent { get; init; }
+        public required string EmailSubject { get; init; }
+
+
+    }
 }
