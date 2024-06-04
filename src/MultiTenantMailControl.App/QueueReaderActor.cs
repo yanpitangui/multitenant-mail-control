@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using Akka;
@@ -9,6 +10,7 @@ namespace MultiTenantMailControl.App;
 
 public class QueueReaderActor : ReceiveActor
 {
+    private readonly ILoggingAdapter _logger = Context.GetLogger();
     private readonly IActorRef _shardingTenant;
     private readonly Source<CommittableIncomingMessage, NotUsed> _source;
     private readonly Dictionary<Guid, CommittableIncomingMessage> _messages;
@@ -18,6 +20,11 @@ public class QueueReaderActor : ReceiveActor
         _shardingTenant = shardingTenant;
         _source = source;
         _messages = new Dictionary<Guid, CommittableIncomingMessage>();
+        
+        Receive<AddToCtrl>(e =>
+        {
+            _messages.Add(e.MessageId, e.Message);
+        });
         
         ReceiveAsync<Events.Ack>(async e =>
         {
@@ -34,16 +41,16 @@ public class QueueReaderActor : ReceiveActor
                 await message.Nack();
             }
         });
+        
     }
     
     protected override void PreStart()
     {
-        var logger = Context.GetLogger();
 
         var self = Context.Self;
-        logger.Info("Starting reading from stream");
+        _logger.Info("Starting reading from stream");
         _source
-            .SelectAsync(10,async m =>
+            .SelectAsync(10, async m =>
             {
                 try
                 {
@@ -51,14 +58,14 @@ public class QueueReaderActor : ReceiveActor
 
                     if (message is not null)
                     {
-                        _messages.TryAdd(message.MessageId, m);
+                        self.Tell(new AddToCtrl(message.MessageId, m));
                         return message;
                     }
                     return Option<TenantCommands.SendEmail>.None;
                 }
                 catch (Exception ex)
                 {
-                    logger.Warning(ex, "Failed parsing message, discarding");
+                    _logger.Warning(ex, "Failed parsing message, discarding");
                     await m.Ack();
                     return Option<TenantCommands.SendEmail>.None;
                 }
@@ -71,16 +78,17 @@ public class QueueReaderActor : ReceiveActor
             {
                 if (x.IsCompletedSuccessfully)
                 {
-                    logger.Info("Stream completed successfully");
+                    _logger.Info("Stream completed successfully");
                 }
                 else
                 {
-                    logger.Error(x.Exception, "Stream completed with failure");
+                    _logger.Error(x.Exception, "Stream completed with failure");
                 }
             });
 
     }
     
+    private record AddToCtrl(Guid MessageId, CommittableIncomingMessage Message);
 }
 
 public static class Events
