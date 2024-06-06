@@ -1,5 +1,7 @@
 using System.Threading.RateLimiting;
 using Akka.Persistence;
+using Polly;
+using Polly.Retry;
 
 namespace MultiTenantMailControl.App;
 
@@ -10,17 +12,32 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
     private TenantRateLimitConfig _config = null!;
     private FixedWindowRateLimiter _rateLimiter = null!;
     
-    public TenantActor(string tenantId)
+    public TenantActor(string tenantId, IEmailSender emailSender)
     {
+        var resiliency = new ResiliencePipelineBuilder()
+            .AddRetry(new RetryStrategyOptions
+            {
+                MaxRetryAttempts = 3,
+                BackoffType = DelayBackoffType.Linear,
+                Delay = TimeSpan.FromSeconds(5),
+                UseJitter = true,
+                OnRetry = (arg) =>
+                {
+                    _log.Warning("Retrying email {0} for tenant {1}. Retry count {2}", arg.Context.OperationKey, tenantId, arg.AttemptNumber);
+                    return ValueTask.CompletedTask;
+                }
+            })
+            .Build();
+        
         PersistenceId = $"tenant-{tenantId}";
         Command<TenantCommands.SendEmail>(message =>
         {
             var sender = Sender;
-            PersistAsync(message, m =>
+            PersistAsync(new InternalCommands.AddToQueue(message), m =>
             {
-                sender.Tell(new Events.Ack(m.MessageId));
-                _log.Info("Persisted message {0}", m.MessageId);
-                Context.Self.Tell(new InternalCommands.AddToQueue(m));
+                sender.Tell(new Events.Ack(m.Message.MessageId));
+                _log.Info("Persisted message {0}", m.Message.MessageId);
+                Context.Self.Tell(m);
             });
         });
         
@@ -37,7 +54,7 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
             _state.Queue.Enqueue(m.Message);
         });
         
-        Recover<InternalCommands.RemoveFromQueue>(_ => { DequeueAndIncrementDailyTokens(); });
+        Recover<InternalCommands.RemoveFromQueue>(r => { DequeueAndIncrementDailyTokens(r.IncrementTokens); });
 
         Command<InternalCommands.AddToQueue>(q =>
         {
@@ -51,11 +68,12 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
         // Restarts daily tokens to the maximum, and sets the last refresh date
         Command<InternalCommands.RefreshDailyTokens>(r =>
         {
-            if(_state.LastRefresh is not null && _state.LastRefresh <= DateOnly.FromDateTime(Context.System.Scheduler.Now.DateTime))
+            if(_state.LastRefresh is null || _state.LastRefresh <= DateOnly.FromDateTime(Context.System.Scheduler.Now.DateTime))
             {
                 RefreshDailyTokens();
                 PersistAsync(r, _ =>
                 {
+                    SaveSnapshot(_state);
                     _log.Info("Refreshed daily tokens for tenant {0}", tenantId);
                     if(_state.Queue.Count >= 0)
                     {
@@ -81,26 +99,48 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
                     {
                         _log.Info("No more messages in queue for tenant {0}", tenantId);
                         Timers.Cancel(nameof(InternalCommands.ProcessQueue));
-                        return;
+                        break;
                     }
                     
                     if(_config.DailyTokens - _state.UsedDailyTokens <= 0)
                     {
                         Timers.Cancel(nameof(InternalCommands.ProcessQueue));
-                        _log.Info("Daily tokens exhausted for tenant {0}, waiting for next cycle", tenantId);
+                        _log.Warning("Daily tokens exhausted for tenant {0}, waiting for next cycle", tenantId);
                         break;
                     }
                     _log.Info("Sending email {0} to {1}", message!.MessageId, message.TenantId);
-                    // Send email
-                    await Task.Delay(Random.Shared.Next(1000, 4000));
-                    DequeueAndIncrementDailyTokens();
-                    PersistAsync(InternalCommands.RemoveFromQueue.Instance, _ =>
+                    ResilienceContext context = ResilienceContextPool.Shared.Get(message.MessageId.ToString());
+                    try
                     {
-                    });
+                        await resiliency.ExecuteAsync(async (ctx, m) => await emailSender.SendEmail(m, ctx.CancellationToken), context,
+                            message);
+                        DequeueAndIncrementDailyTokens();
+                        PersistAsync(new InternalCommands.RemoveFromQueue(), _ => { });
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to send email {0} to {1}, sending it back to end of queue",
+                            message.MessageId, message.TenantId);
+                        _state.Queue.TryDequeue(out var _);
+                        _state.Queue.Enqueue(message);
+                        PersistAllAsync<InternalCommands.IInternalCommand>(
+                            [new InternalCommands.RemoveFromQueue(false), new InternalCommands.AddToQueue(message)],
+                            _ => { });
+                        // Breaks to avoid infinite loop
+                        if (_state.Queue.Count == 1)
+                        {
+                            break;
+                        }
+                    }
+                    finally
+                    {
+                        ResilienceContextPool.Shared.Return(context);
+                    }
+                         
                 }
                 else
                 {
-                    _log.Info("Rate limit exceeded for tenant {0}, waiting for next cycle", tenantId);
+                    _log.Warning("Rate limit exceeded for tenant {0}, waiting for next cycle", tenantId);
                     break;
                 }
             }
@@ -115,10 +155,13 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
         _state.LastRefresh = DateOnly.FromDateTime(Context.System.Scheduler.Now.DateTime);
     }
 
-    private void DequeueAndIncrementDailyTokens()
+    private void DequeueAndIncrementDailyTokens(bool incrementTokens = true)
     {
         _state.Queue.TryDequeue(out _);
-        _state.UsedDailyTokens++;
+        if (incrementTokens)
+        {
+            _state.UsedDailyTokens++;
+        }
     }
 
     protected override void PreStart()
@@ -158,9 +201,6 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
 
     public override string PersistenceId { get; }
     
-    
-    
-    public static Props Props(string tenantId) => Akka.Actor.Props.Create<TenantActor>(tenantId);
     public ITimerScheduler Timers { get; set; } = null!;
 
     private record TenantRateLimitConfig
@@ -171,6 +211,8 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
     private record TenantState
     {
         public Queue<TenantCommands.SendEmail> Queue { get; set; } = new();
+        
+        public Dictionary<Guid, int> RetryCount { get; set; } = new();
         
         public int UsedDailyTokens { get; set; }
         
@@ -187,17 +229,12 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
             }
             public static RefreshDailyTokens Instance { get; } = new();
         }
-    
-        public record AddToQueue(TenantCommands.SendEmail Message);
 
-        public record RemoveFromQueue
-        {
-            private RemoveFromQueue()
-            {
-            
-            }
-            public static RemoveFromQueue Instance { get; } = new();
-        }
+        public interface IInternalCommand;
+    
+        public record AddToQueue(TenantCommands.SendEmail Message) : IInternalCommand;
+
+        public record RemoveFromQueue(bool IncrementTokens = true) : IInternalCommand;
 
         public record ProcessQueue
         {
@@ -231,7 +268,6 @@ public static class TenantCommands
         public Guid MessageId { get; init; }
         public required string EmailContent { get; init; }
         public required string EmailSubject { get; init; }
-
 
     }
 }

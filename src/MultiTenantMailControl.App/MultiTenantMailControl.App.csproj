@@ -11,6 +11,7 @@
         <PackageReference Include="Akka.Cluster.Hosting" />
         <PackageReference Include="Akka.Hosting"/>
         <PackageReference Include="Akka.Streams.Amqp.RabbitMq" />
+        <PackageReference Include="Polly" />
         <PackageReference Include="System.Threading.RateLimiting" />
     </ItemGroup>
 

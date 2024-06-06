@@ -5,6 +5,7 @@ using Akka.Remote.Hosting;
 using Akka.Streams;
 using Akka.Streams.Amqp.RabbitMq;
 using Akka.Streams.Amqp.RabbitMq.Dsl;
+using Microsoft.Extensions.DependencyInjection;
 using MultiTenantMailControl.App;
 using Microsoft.Extensions.Hosting;
 
@@ -13,6 +14,7 @@ var hostBuilder = new HostBuilder();
 hostBuilder.ConfigureServices((context, services) =>
 {
     const string actorSystemName = "MultiTenantControl";
+    services.AddSingleton<IEmailSender, StubEmailSender>();
     services.AddAkka(actorSystemName, (builder, sp) =>
     {
         var defaultShardOptions = new ShardOptions()
@@ -24,7 +26,7 @@ hostBuilder.ConfigureServices((context, services) =>
             RememberEntitiesStore = RememberEntitiesStore.DData
         };
         
-        var clusterOptions = new Akka.Cluster.Hosting.ClusterOptions
+        var clusterOptions = new ClusterOptions
         {
             MinimumNumberOfMembers = 1,
             SeedNodes = new[] { $"akka.tcp://{actorSystemName}@0.0.0.0:5213" },
@@ -41,7 +43,8 @@ hostBuilder.ConfigureServices((context, services) =>
         builder
             .WithRemoting(remoteOptions)
             .WithClustering(clusterOptions)
-            .WithShardRegion<TenantActor>(nameof(TenantActor), TenantActor.Props, extractor, defaultShardOptions)
+            .WithShardRegion<TenantActor>(nameof(TenantActor), (system, registry, resolver) => 
+                (tenantId) => resolver.Props<TenantActor>(tenantId), extractor, defaultShardOptions)
             .WithActors((system, registry, resolver) =>
             {
                 const string queueName = "send-mail";
