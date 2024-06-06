@@ -41,13 +41,12 @@ _ = src
     .RunWith(amqpSink, mat);
 
 var tenants = Enumerable.Range(1, 100)
-    .Select(x => $"tenant-{x}")
     .ToArray();
 var generator = new Faker<TenantCommands.SendEmail>();
 generator.RuleFor(x => x.MessageId, f => Guid.NewGuid());
 generator.RuleFor(x => x.EmailSubject, f => f.Lorem.Sentence());
 generator.RuleFor(x => x.EmailContent, f => f.Lorem.Paragraph());
-generator.RuleFor(x => x.TenantId, f => f.PickRandom(tenants));
+generator.RuleFor(x => x.TenantId, f => f.PickRandom(tenants).ToString());
 while (true)
 {
     foreach (var m in generator.Generate(10))
