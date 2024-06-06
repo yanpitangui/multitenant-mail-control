@@ -1,6 +1,7 @@
 ﻿using Akka.Cluster.Hosting;
 using Akka.Cluster.Sharding;
 using Akka.Hosting;
+using Akka.Persistence.Hosting;
 using Akka.Remote.Hosting;
 using Akka.Streams;
 using Akka.Streams.Amqp.RabbitMq;
@@ -42,6 +43,8 @@ hostBuilder.ConfigureServices((context, services) =>
         var extractor = new TenantIdExtractor(50);
         builder
             .WithRemoting(remoteOptions)
+            .WithInMemoryJournal()
+            .WithInMemorySnapshotStore()
             .WithClustering(clusterOptions)
             .WithShardRegion<TenantActor>(nameof(TenantActor), (system, registry, resolver) => 
                 (tenantId) => resolver.Props<TenantActor>(tenantId), extractor, defaultShardOptions)

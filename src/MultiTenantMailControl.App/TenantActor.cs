@@ -141,11 +141,10 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
                 else
                 {
                     _log.Warning("Rate limit exceeded for tenant {0}, waiting for next cycle", tenantId);
+                    RestartProcessQueueTimer();
                     break;
                 }
             }
-
-            _rateLimiter.TryReplenish();
         });
     }
 
@@ -168,14 +167,14 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
     {
         _config = new TenantRateLimitConfig
         {
-            DailyTokens = 5,
+            DailyTokens = 500,
             MaxPerMinute = 5
         };
         _rateLimiter = new(new FixedWindowRateLimiterOptions
         {
             Window = TimeSpan.FromMinutes(1),
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-            AutoReplenishment = false,
+            AutoReplenishment = true,
             PermitLimit = _config.MaxPerMinute
         });
         if (_state.LastRefresh is null || _state.LastRefresh <= DateOnly.FromDateTime(Context.System.Scheduler.Now.DateTime))
