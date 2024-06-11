@@ -7,7 +7,7 @@ public class StubEmailSender : IEmailSender
     {
         await Task.Delay(2000, ct);
         var failure = Random.Shared.Next(0, 10);
-        if (failure <= 3)
+        if (failure <= 7)
         {
             throw new Exception("Failed to send email");
         }

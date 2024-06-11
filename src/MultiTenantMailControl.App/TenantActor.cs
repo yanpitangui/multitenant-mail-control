@@ -23,7 +23,7 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
                 UseJitter = true,
                 OnRetry = (arg) =>
                 {
-                    _log.Warning("Retrying email {0} for tenant {1}. Retry count {2}", arg.Context.OperationKey, tenantId, arg.AttemptNumber);
+                    _log.Debug("Retrying email {0} for tenant {1}. Retry count {2}", arg.Context.OperationKey, tenantId, arg.AttemptNumber);
                     return ValueTask.CompletedTask;
                 }
             })
@@ -51,14 +51,14 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
 
         Recover<InternalCommands.AddToQueue>(m =>
         {
-            _state.Queue.Enqueue(m.Message);
+            _state.Queue.Enqueue(new MessageCtrl(m.Message));
         });
         
         Recover<InternalCommands.RemoveFromQueue>(r => { DequeueAndIncrementDailyTokens(r.IncrementTokens); });
 
         Command<InternalCommands.AddToQueue>(q =>
         {
-            _state.Queue.Enqueue(q.Message);
+            _state.Queue.Enqueue(new MessageCtrl(q.Message));
             if(!Timers.IsTimerActive(nameof(InternalCommands.ProcessQueue)))
             {
                 RestartProcessQueueTimer();
@@ -94,7 +94,7 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
                 var lease = _rateLimiter.AttemptAcquire();
                 if (lease.IsAcquired)
                 {
-                    var hasMessages = _state.Queue.TryPeek(out var message);
+                    var hasMessages = _state.Queue.TryDequeue(out var envelope);
                     if (!hasMessages)
                     {
                         _log.Info("No more messages in queue for tenant {0}", tenantId);
@@ -108,23 +108,31 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
                         _log.Warning("Daily tokens exhausted for tenant {0}, waiting for next cycle", tenantId);
                         break;
                     }
-                    _log.Info("Sending email {0} to {1}", message!.MessageId, message.TenantId);
-                    ResilienceContext context = ResilienceContextPool.Shared.Get(message.MessageId.ToString());
+
+                    if (envelope!.RetryCount >= 3)
+                    {
+                        _log.Warning("Retry count exceeded for email {0} to {1}, sending to DLQ", envelope.Message.MessageId, envelope.Message.TenantId);
+                        continue;
+                    }
+                    _log.Info("Sending email {0} to {1}", envelope!.Message.MessageId, envelope.Message.TenantId);
+                    ResilienceContext context = ResilienceContextPool.Shared.Get(envelope.Message.MessageId.ToString());
                     try
                     {
                         await resiliency.ExecuteAsync(async (ctx, m) => await emailSender.SendEmail(m, ctx.CancellationToken), context,
-                            message);
+                            envelope.Message);
                         DequeueAndIncrementDailyTokens();
-                        PersistAsync(new InternalCommands.RemoveFromQueue(), _ => { });
+                        PersistAsync(new InternalEvents.MessageSent(), _ => { });
                     }
                     catch (Exception ex)
                     {
-                        _log.Error(ex, "Failed to send email {0} to {1}, sending it back to end of queue",
-                            message.MessageId, message.TenantId);
-                        _state.Queue.TryDequeue(out var _);
-                        _state.Queue.Enqueue(message);
-                        PersistAllAsync<InternalCommands.IInternalCommand>(
-                            [new InternalCommands.RemoveFromQueue(false), new InternalCommands.AddToQueue(message)],
+                        _log.Error(ex, "Failed to send email {0} to {1}, sending it back to end of queue. Retry Count: {2}",
+                            envelope.Message.MessageId, envelope.Message.TenantId, envelope.RetryCount);
+                        _state.Queue.Enqueue(envelope with
+                        {
+                            RetryCount = envelope.RetryCount + 1
+                        });
+                        PersistAllAsync(
+                            [InternalEvents.MessageFailed.Instance],
                             _ => { });
                         // Breaks to avoid infinite loop
                         if (_state.Queue.Count == 1)
@@ -209,14 +217,25 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
     }
     private record TenantState
     {
-        public Queue<TenantCommands.SendEmail> Queue { get; set; } = new();
-        
-        public Dictionary<Guid, int> RetryCount { get; set; } = new();
-        
+        public Queue<MessageCtrl> Queue { get; set; } = new();
         public int UsedDailyTokens { get; set; }
         
         public DateOnly? LastRefresh { get; set; }
     }
+
+    private static class InternalEvents
+    {
+        public record MessageSent()
+        {
+            public static MessageSent Instance { get; } = new();
+        }
+        
+        public record MessageFailed()
+        {
+            public static MessageFailed Instance { get; } = new();
+        }
+    }
+    private record MessageCtrl(TenantCommands.SendEmail Message, int RetryCount = 0);
 
     private static class InternalCommands
     {
@@ -229,11 +248,10 @@ public class TenantActor : ReceivePersistentActor, IWithTimers
             public static RefreshDailyTokens Instance { get; } = new();
         }
 
-        public interface IInternalCommand;
     
-        public record AddToQueue(TenantCommands.SendEmail Message) : IInternalCommand;
+        public record AddToQueue(TenantCommands.SendEmail Message);
 
-        public record RemoveFromQueue(bool IncrementTokens = true) : IInternalCommand;
+        public record RemoveFromQueue(bool IncrementTokens = true);
 
         public record ProcessQueue
         {

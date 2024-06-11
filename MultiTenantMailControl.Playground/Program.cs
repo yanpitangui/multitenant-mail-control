@@ -40,7 +40,7 @@ _ = src
     .Select(ByteString.FromString)
     .RunWith(amqpSink, mat);
 
-var tenants = Enumerable.Range(1, 100)
+var tenants = Enumerable.Range(1, 10)
     .ToArray();
 var generator = new Faker<TenantCommands.SendEmail>();
 generator.RuleFor(x => x.MessageId, f => Guid.NewGuid());
