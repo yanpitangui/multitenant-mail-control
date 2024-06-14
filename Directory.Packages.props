@@ -5,7 +5,7 @@
   <!-- Akka.NET Package Versions -->
   <ItemGroup>
     <PackageVersion Include="Akka.Cluster.Hosting" Version="1.5.20" />
-    <PackageVersion Include="Akka.Hosting" Version="1.5.20" />
+    <PackageVersion Include="Akka.Hosting" Version="1.5.24" />
     <PackageVersion Include="Akka.Streams.Amqp.RabbitMq" Version="1.5.18" />
     <PackageVersion Include="Bogus" Version="35.5.1" />
     <PackageVersion Include="Polly" Version="8.4.0" />
