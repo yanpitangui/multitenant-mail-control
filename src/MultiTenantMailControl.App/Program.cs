@@ -6,17 +6,25 @@ using Akka.Remote.Hosting;
 using Akka.Streams;
 using Akka.Streams.Amqp.RabbitMq;
 using Akka.Streams.Amqp.RabbitMq.Dsl;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MultiTenantMailControl.App;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Serilog;
 
-var hostBuilder = new HostBuilder();
+var hostBuilder = Host.CreateDefaultBuilder();
 
-hostBuilder.ConfigureServices((context, services) =>
+hostBuilder
+
+    .ConfigureServices((context, services) =>
 {
     const string actorSystemName = "MultiTenantControl";
     services.AddSingleton<IEmailSender, StubEmailSender>();
-    services.AddAkka(actorSystemName, (builder, sp) =>
+    services.AddSerilog(o =>
+    {
+        o.ReadFrom.Configuration(context.Configuration);
+    }).AddAkka(actorSystemName, (builder, sp) =>
     {
         var defaultShardOptions = new ShardOptions()
         {
@@ -39,9 +47,15 @@ hostBuilder.ConfigureServices((context, services) =>
             HostName = "0.0.0.0",
             Port = 5213, 
         };
+        var factory = sp.GetRequiredService<ILoggerFactory>();
         
         var extractor = new TenantIdExtractor(50);
         builder
+            .ConfigureLoggers(l =>
+            {
+                l.ClearLoggers();
+                l.AddLoggerFactory(factory);
+            })
             .WithRemoting(remoteOptions)
             .WithInMemoryJournal()
             .WithInMemorySnapshotStore()
@@ -51,11 +65,6 @@ hostBuilder.ConfigureServices((context, services) =>
             .WithActors((system, registry, resolver) =>
             {
                 const string queueName = "send-mail";
-                var connectionSettings = AmqpConnectionDetails
-                    .Create("localhost", 5672)
-                    .WithAutomaticRecoveryEnabled(true)
-                    .WithNetworkRecoveryInterval(TimeSpan.FromSeconds(1));
-        
         
                 //queue declaration
                 var queueDeclaration = QueueDeclaration
@@ -66,7 +75,7 @@ hostBuilder.ConfigureServices((context, services) =>
                 //create source
                 var amqpSource = AmqpSource.CommittableSource( 
                     NamedQueueSourceSettings
-                        .Create(connectionSettings, queueName)
+                        .Create(AmqpConnectionUri.Create(context.Configuration.GetConnectionString("RabbitMq")), queueName)
                         .WithDeclarations(queueDeclaration),bufferSize: 10);
 
                 

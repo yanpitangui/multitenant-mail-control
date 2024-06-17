@@ -5,14 +5,27 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <UserSecretsId>d1e99dc6-ee59-4ffe-b7f7-394507df7b4f</UserSecretsId>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="Akka.Cluster.Hosting" />
         <PackageReference Include="Akka.Hosting"/>
         <PackageReference Include="Akka.Streams.Amqp.RabbitMq" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
         <PackageReference Include="Polly" />
+        <PackageReference Include="Serilog.AspNetCore" />
+        <PackageReference Include="Serilog.Sinks.Async" />
         <PackageReference Include="System.Threading.RateLimiting" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Update="appsettings.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="appsettings.Development.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
     </ItemGroup>
 
 </Project>
