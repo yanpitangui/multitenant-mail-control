@@ -13,10 +13,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
 
-var hostBuilder = Host.CreateDefaultBuilder();
+var hostBuilder = Host.CreateDefaultBuilder(args);
 
 hostBuilder
-
     .ConfigureServices((context, services) =>
 {
     const string actorSystemName = "MultiTenantControl";

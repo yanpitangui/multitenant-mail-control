@@ -6,11 +6,11 @@
   <ItemGroup>
     <PackageVersion Include="Akka.Cluster.Hosting" Version="1.5.30.1" />
     <PackageVersion Include="Akka.Hosting" Version="1.5.30.1" />
-    <PackageVersion Include="Akka.Streams.Amqp.RabbitMq" Version="1.5.18" />
+    <PackageVersion Include="Akka.Streams.Amqp.RabbitMq" Version="1.5.28" />
     <PackageVersion Include="Bogus" Version="35.6.1" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageVersion Include="Polly" Version="8.4.2" />
-    <PackageVersion Include="Serilog.AspNetCore" Version="8.0.2" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="8.0.3" />
     <PackageVersion Include="Serilog.Sinks.Async" Version="2.1.0" />
     <PackageVersion Include="System.Threading.RateLimiting" Version="8.0.0" />
   </ItemGroup>
