@@ -82,8 +82,8 @@ hostBuilder
                         randomFactor: 0.2)
                     .WithMaxRestarts(20, TimeSpan.FromMinutes(5)));
                 var shard = registry.Get<TenantActor>();
-                var queueReader = system.ActorOf(Props.Create(() => new QueueReaderActor(resilientSource, shard)), "reader");
-                registry.Register<QueueReaderActor>(queueReader);
+                var queueReader = system.ActorOf(Props.Create(() => new QueueReaderActor<TenantCommands.SendEmail>(resilientSource, shard)), "reader");
+                registry.Register<QueueReaderActor<TenantCommands.SendEmail>>(queueReader);
             });
     });
 });

@@ -8,7 +8,7 @@ using Akka.Util;
 
 namespace MultiTenantMailControl.App;
 
-public class QueueReaderActor : ReceiveActor
+public class QueueReaderActor<T> : ReceiveActor where T: IWithTenantId, IWithMessageId
 {
     private readonly ILoggingAdapter _logger = Context.GetLogger();
     private readonly IActorRef _shardingTenant;
@@ -54,20 +54,20 @@ public class QueueReaderActor : ReceiveActor
             {
                 try
                 {
-                    var message = JsonSerializer.Deserialize<TenantCommands.SendEmail>(m.Message.Bytes.ToString(Encoding.UTF8));
+                    var message = JsonSerializer.Deserialize<T>(m.Message.Bytes.ToString(Encoding.UTF8));
 
                     if (message is not null)
                     {
                         self.Tell(new AddToCtrl(message.MessageId, m));
                         return message;
                     }
-                    return Option<TenantCommands.SendEmail>.None;
+                    return Option<T>.None;
                 }
                 catch (Exception ex)
                 {
                     _logger.Warning(ex, "Failed parsing message, discarding");
                     await m.Ack();
-                    return Option<TenantCommands.SendEmail>.None;
+                    return Option<T>.None;
                 }
 
             })
