@@ -12,6 +12,6 @@
     <PackageVersion Include="Polly" Version="8.4.2" />
     <PackageVersion Include="Serilog.AspNetCore" Version="8.0.3" />
     <PackageVersion Include="Serilog.Sinks.Async" Version="2.1.0" />
-    <PackageVersion Include="System.Threading.RateLimiting" Version="8.0.0" />
+    <PackageVersion Include="System.Threading.RateLimiting" Version="9.0.0" />
   </ItemGroup>
 </Project>
