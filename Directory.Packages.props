@@ -9,7 +9,7 @@
     <PackageVersion Include="Akka.Streams.Amqp.RabbitMq" Version="1.5.28" />
     <PackageVersion Include="Bogus" Version="35.6.1" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
-    <PackageVersion Include="Polly" Version="8.4.2" />
+    <PackageVersion Include="Polly" Version="8.5.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="8.0.3" />
     <PackageVersion Include="Serilog.Sinks.Async" Version="2.1.0" />
     <PackageVersion Include="System.Threading.RateLimiting" Version="9.0.0" />
